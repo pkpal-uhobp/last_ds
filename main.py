@@ -19,6 +19,14 @@ METHOD_MAX_BITS = {
     "genpr": 24
 }
 
+# RSA Constants
+RSA_MIN_BITS = 8
+RSA_MAX_BITS = 128
+RSA_MAX_GENERATION_ATTEMPTS = 20
+RSA_COMMON_E_VALUES = [3, 5, 17, 257, 65537]
+RSA_MSG_TRUNCATE_SHORT = 50
+RSA_MSG_TRUNCATE_LONG = 100
+
 # ===========================
 # Генераторы гаммы
 # ===========================
@@ -589,33 +597,53 @@ class RSATab(QWidget):
         step1_group = QGroupBox("Шаг 1: Генерация простых чисел p и q")
         step1_layout = QVBoxLayout()
         
+        # Режим генерации
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Режим:"))
+        self.gen_mode_combo = QComboBox()
+        self.gen_mode_combo.addItems([
+            "Автоматическая генерация",
+            "Ввод вручную"
+        ])
+        self.gen_mode_combo.currentIndexChanged.connect(self.on_gen_mode_changed)
+        mode_row.addWidget(self.gen_mode_combo)
+        mode_row.addStretch()
+        step1_layout.addLayout(mode_row)
+        
+        # Параметры автогенерации
+        self.auto_gen_widget = QWidget()
+        auto_gen_layout = QVBoxLayout(self.auto_gen_widget)
+        
         bits_row = QHBoxLayout()
         bits_row.addWidget(QLabel("Битность:"))
         self.bits_spin = QSpinBox()
-        self.bits_spin.setRange(8, 128)
+        self.bits_spin.setRange(RSA_MIN_BITS, RSA_MAX_BITS)
         self.bits_spin.setValue(16)
         bits_row.addWidget(self.bits_spin)
         bits_row.addWidget(QLabel("бит (рекомендуется: 16-64 для быстрой работы)"))
         bits_row.addStretch()
-        step1_layout.addLayout(bits_row)
-        
-        pq_row = QHBoxLayout()
-        pq_row.addWidget(QLabel("p:"))
-        self.p_edit = QLineEdit()
-        self.p_edit.setPlaceholderText("Нажмите 'Сгенерировать' или введите вручную")
-        pq_row.addWidget(self.p_edit)
-        pq_row.addWidget(QLabel("q:"))
-        self.q_edit = QLineEdit()
-        self.q_edit.setPlaceholderText("Нажмите 'Сгенерировать' или введите вручную")
-        pq_row.addWidget(self.q_edit)
-        step1_layout.addLayout(pq_row)
+        auto_gen_layout.addLayout(bits_row)
         
         gen_btn_row = QHBoxLayout()
         self.btn_generate_pq = QPushButton("🎲 Сгенерировать p и q")
         self.btn_generate_pq.clicked.connect(self.generate_pq)
         gen_btn_row.addWidget(self.btn_generate_pq)
         gen_btn_row.addStretch()
-        step1_layout.addLayout(gen_btn_row)
+        auto_gen_layout.addLayout(gen_btn_row)
+        
+        step1_layout.addWidget(self.auto_gen_widget)
+        
+        # Поля для p и q
+        pq_row = QHBoxLayout()
+        pq_row.addWidget(QLabel("p:"))
+        self.p_edit = QLineEdit()
+        self.p_edit.setPlaceholderText("Введите или сгенерируйте p")
+        pq_row.addWidget(self.p_edit)
+        pq_row.addWidget(QLabel("q:"))
+        self.q_edit = QLineEdit()
+        self.q_edit.setPlaceholderText("Введите или сгенерируйте q")
+        pq_row.addWidget(self.q_edit)
+        step1_layout.addLayout(pq_row)
         
         step1_group.setLayout(step1_layout)
         layout.addWidget(step1_group)
@@ -623,6 +651,23 @@ class RSATab(QWidget):
         # ========== ШАГ 2: Вычисление ключей ==========
         step2_group = QGroupBox("Шаг 2: Вычисление ключей RSA")
         step2_layout = QVBoxLayout()
+        
+        # Режим ключей
+        key_mode_row = QHBoxLayout()
+        key_mode_row.addWidget(QLabel("Режим:"))
+        self.key_mode_combo = QComboBox()
+        self.key_mode_combo.addItems([
+            "Вычислить из p и q",
+            "Ввести ключи вручную"
+        ])
+        self.key_mode_combo.currentIndexChanged.connect(self.on_key_mode_changed)
+        key_mode_row.addWidget(self.key_mode_combo)
+        key_mode_row.addStretch()
+        step2_layout.addLayout(key_mode_row)
+        
+        # Режим вычисления из p и q
+        self.calc_mode_widget = QWidget()
+        calc_mode_layout = QVBoxLayout(self.calc_mode_widget)
         
         e_row = QHBoxLayout()
         e_row.addWidget(QLabel("Открытая экспонента e:"))
@@ -632,8 +677,40 @@ class RSATab(QWidget):
         self.btn_calc_keys.clicked.connect(self.calculate_keys)
         e_row.addWidget(self.btn_calc_keys)
         e_row.addStretch()
-        step2_layout.addLayout(e_row)
+        calc_mode_layout.addLayout(e_row)
         
+        step2_layout.addWidget(self.calc_mode_widget)
+        
+        # Режим ручного ввода ключей
+        self.manual_mode_widget = QWidget()
+        manual_mode_layout = QVBoxLayout(self.manual_mode_widget)
+        
+        manual_row1 = QHBoxLayout()
+        manual_row1.addWidget(QLabel("N:"))
+        self.N_edit = QLineEdit()
+        self.N_edit.setPlaceholderText("Введите N (модуль)")
+        manual_row1.addWidget(self.N_edit)
+        manual_row1.addWidget(QLabel("e:"))
+        self.e_manual_edit = QLineEdit("65537")
+        self.e_manual_edit.setPlaceholderText("Введите e")
+        manual_row1.addWidget(self.e_manual_edit)
+        manual_mode_layout.addLayout(manual_row1)
+        
+        manual_row2 = QHBoxLayout()
+        manual_row2.addWidget(QLabel("d:"))
+        self.d_edit = QLineEdit()
+        self.d_edit.setPlaceholderText("Введите d (секретная экспонента)")
+        manual_row2.addWidget(self.d_edit)
+        self.btn_set_manual = QPushButton("✅ Установить ключи")
+        self.btn_set_manual.clicked.connect(self.set_manual_keys)
+        manual_row2.addWidget(self.btn_set_manual)
+        manual_row2.addStretch()
+        manual_mode_layout.addLayout(manual_row2)
+        
+        self.manual_mode_widget.setVisible(False)
+        step2_layout.addWidget(self.manual_mode_widget)
+        
+        # Отображение ключей
         keys_display = QHBoxLayout()
         self.keys_label = QLabel("Ключи: не вычислены")
         self.keys_label.setWordWrap(True)
@@ -654,7 +731,7 @@ class RSATab(QWidget):
         layout.addWidget(step2_group)
         
         # ========== ШАГ 3: Шифрование/Дешифрование ==========
-        step3_group = QGroupBox("Шаг 3: Шифрование и дешифрование")
+        step3_group = QGroupBox("Шаг 3: Операции шифрования и дешифрования")
         step3_layout = QVBoxLayout()
         
         # Панель ввода/вывода
@@ -711,12 +788,26 @@ class RSATab(QWidget):
         
         step3_layout.addWidget(splitter)
         
+        # Лог операций
+        log_group = QGroupBox("Лог операций")
+        log_layout = QVBoxLayout()
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setPlaceholderText("Детали операций будут отображаться здесь...")
+        self.log_text.setMaximumHeight(150)
+        log_layout.addWidget(self.log_text)
+        log_group.setLayout(log_layout)
+        step3_layout.addWidget(log_group)
+        
         # Кнопки операций
         ops_row = QHBoxLayout()
+        self.btn_prepare = QPushButton("🧾 Подготовить блоки")
+        self.btn_prepare.clicked.connect(self.prepare_blocks)
         self.btn_encrypt = QPushButton("🔒 Зашифровать")
         self.btn_encrypt.clicked.connect(self.encrypt)
         self.btn_decrypt = QPushButton("🔓 Расшифровать")
         self.btn_decrypt.clicked.connect(self.decrypt)
+        ops_row.addWidget(self.btn_prepare)
         ops_row.addWidget(self.btn_encrypt)
         ops_row.addWidget(self.btn_decrypt)
         ops_row.addStretch()
@@ -730,8 +821,78 @@ class RSATab(QWidget):
         self.e_val = None
         self.d = None
         self.phi = None
+        self.blocks = []
+        self.cipher_blocks = []
     
     # ========== Методы RSA ==========
+    
+    def on_gen_mode_changed(self, index):
+        """Переключение режима генерации"""
+        if index == 0:  # Автоматическая генерация
+            self.auto_gen_widget.setVisible(True)
+            self.btn_generate_pq.setEnabled(True)
+        else:  # Ввод вручную
+            self.auto_gen_widget.setVisible(False)
+            self.btn_generate_pq.setEnabled(False)
+    
+    def on_key_mode_changed(self, index):
+        """Переключение режима ключей"""
+        if index == 0:  # Вычислить из p и q
+            self.calc_mode_widget.setVisible(True)
+            self.manual_mode_widget.setVisible(False)
+        else:  # Ввести ключи вручную
+            self.calc_mode_widget.setVisible(False)
+            self.manual_mode_widget.setVisible(True)
+    
+    def set_manual_keys(self):
+        """Установка ключей вручную"""
+        try:
+            N_text = self.N_edit.text().strip()
+            e_text = self.e_manual_edit.text().strip()
+            d_text = self.d_edit.text().strip()
+            
+            if not N_text or not e_text or not d_text:
+                raise ValueError("Введите все параметры: N, e, d")
+            
+            self.N = int(N_text)
+            self.e_val = int(e_text)
+            self.d = int(d_text)
+            
+            if self.N < 2:
+                raise ValueError("N должно быть >= 2")
+            if self.e_val <= 1:
+                raise ValueError("e должно быть > 1")
+            if self.d <= 1:
+                raise ValueError("d должно быть > 1")
+            
+            self.phi = None  # Неизвестно при ручном вводе
+            
+            # Обновляем отображение
+            self.keys_label.setText(
+                f"Открытый ключ: (N={self.N}, e={self.e_val})\n"
+                f"Секретный ключ: d={self.d}\n"
+                f"φ(N) = ? (неизвестно при ручном вводе)"
+            )
+            
+            # Обновляем поле e в режиме расчета
+            self.e_edit.setText(str(self.e_val))
+            
+            self.log_text.append(
+                f"[Ручной ввод ключей]\n"
+                f"N = {self.N}\n"
+                f"e = {self.e_val}\n"
+                f"d = {self.d}\n"
+            )
+            
+            QMessageBox.information(
+                self, "✅ Ключи установлены",
+                f"Ключи успешно установлены вручную!\n\n"
+                f"N = {self.N}\n"
+                f"e = {self.e_val}\n"
+                f"d = {self.d}"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "❌ Ошибка", str(e))
     
     def generate_pq(self):
         """Генерация простых чисел p и q"""
@@ -754,7 +915,7 @@ class RSATab(QWidget):
             # Генерируем q (должно быть отличным от p)
             q = generate_large_prime(bits, method)
             attempts = 0
-            while q == p and attempts < 20:
+            while q == p and attempts < RSA_MAX_GENERATION_ATTEMPTS:
                 q = generate_large_prime(bits, method)
                 attempts += 1
             
@@ -764,11 +925,21 @@ class RSATab(QWidget):
             self.p_edit.setText(str(p))
             self.q_edit.setText(str(q))
             
+            self.log_text.append(
+                f"[Генерация простых чисел]\n"
+                f"Битность: {bits}\n"
+                f"Метод: {method}\n"
+                f"p = {p}\n"
+                f"q = {q}\n"
+                f"p × q = {p * q}\n"
+            )
+            
             QMessageBox.information(
                 self, "✅ Успех",
                 f"Простые числа сгенерированы!\n\n"
                 f"p = {p}\n"
-                f"q = {q}\n\n"
+                f"q = {q}\n"
+                f"Метод: {method}\n\n"
                 f"Теперь нажмите 'Вычислить ключи'."
             )
         except Exception as e:
@@ -812,7 +983,7 @@ class RSATab(QWidget):
             g, _, _ = extended_gcd(e, self.phi)
             if g != 1:
                 # Пытаемся найти подходящее e
-                for candidate in [3, 5, 17, 257, 65537]:
+                for candidate in RSA_COMMON_E_VALUES:
                     if 1 < candidate < self.phi:
                         g2, _, _ = extended_gcd(candidate, self.phi)
                         if g2 == 1:
@@ -836,7 +1007,17 @@ class RSATab(QWidget):
             self.keys_label.setText(
                 f"Открытый ключ: (N={self.N}, e={e})\n"
                 f"Секретный ключ: d={self.d}\n"
-                f"φ(N)={(self.phi)}"
+                f"φ(N)={self.phi}"
+            )
+            
+            self.log_text.append(
+                f"[Вычисление ключей]\n"
+                f"p = {p}\n"
+                f"q = {q}\n"
+                f"N = p × q = {self.N}\n"
+                f"φ(N) = (p-1) × (q-1) = {self.phi}\n"
+                f"e = {e}\n"
+                f"d = e⁻¹ mod φ(N) = {self.d}\n"
             )
             
             QMessageBox.information(
@@ -849,6 +1030,43 @@ class RSATab(QWidget):
             )
         except Exception as e:
             QMessageBox.critical(self, "❌ Ошибка вычисления", str(e))
+    
+    def prepare_blocks(self):
+        """Подготовка блоков из текста"""
+        try:
+            if self.N is None:
+                raise ValueError("Сначала вычислите ключи (N должно быть определено).")
+            
+            text = self.input_text.toPlainText().strip()
+            if not text:
+                raise ValueError("Введите текст для подготовки блоков.")
+            
+            # Преобразуем текст в цифры
+            digits = text_to_digits(text)
+            
+            # Разбиваем на блоки
+            self.blocks = split_into_blocks(digits, self.N)
+            
+            # Формируем результат
+            blocks_str = ','.join(map(str, self.blocks))
+            
+            # Выводим в результат
+            self.output_text.setPlainText(blocks_str)
+            
+            self.log_text.append(
+                f"[Подготовка блоков]\n"
+                f"Текст: {text[:RSA_MSG_TRUNCATE_SHORT]}{'...' if len(text) > RSA_MSG_TRUNCATE_SHORT else ''}\n"
+                f"Блоков: {len(self.blocks)}\n"
+                f"N = {self.N}\n"
+            )
+            
+            QMessageBox.information(
+                self, "✅ Подготовка выполнена",
+                f"Подготовлено {len(self.blocks)} блоков.\n\n"
+                f"Блоки: {blocks_str[:RSA_MSG_TRUNCATE_LONG]}{'...' if len(blocks_str) > RSA_MSG_TRUNCATE_LONG else ''}"
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "❌ Ошибка подготовки", str(e))
     
     def encrypt(self):
         """Шифрование текста"""
@@ -865,21 +1083,30 @@ class RSATab(QWidget):
             
             # Разбиваем на блоки
             blocks = split_into_blocks(digits, self.N)
+            self.blocks = blocks
             
             # Шифруем каждый блок
-            cipher_blocks = [mod_exp(m, self.e_val, self.N) for m in blocks]
+            self.cipher_blocks = [mod_exp(m, self.e_val, self.N) for m in blocks]
             
             # Формируем результат
-            cipher_str = ','.join(map(str, cipher_blocks))
+            cipher_str = ','.join(map(str, self.cipher_blocks))
             
             # Выводим результат
             self.output_text.setPlainText(cipher_str)
             
+            self.log_text.append(
+                f"[Шифрование]\n"
+                f"Текст: {text[:RSA_MSG_TRUNCATE_SHORT]}{'...' if len(text) > RSA_MSG_TRUNCATE_SHORT else ''}\n"
+                f"Блоков M_i: {len(blocks)}\n"
+                f"Блоков C_i: {len(self.cipher_blocks)}\n"
+                f"Параметры: N={self.N}, e={self.e_val}\n"
+            )
+            
             QMessageBox.information(
                 self, "✅ Шифрование выполнено",
                 f"Текст зашифрован!\n\n"
-                f"Исходный текст: {text[:50]}{'...' if len(text) > 50 else ''}\n"
-                f"Количество блоков: {len(cipher_blocks)}\n\n"
+                f"Исходный текст: {text[:RSA_MSG_TRUNCATE_SHORT]}{'...' if len(text) > RSA_MSG_TRUNCATE_SHORT else ''}\n"
+                f"Количество блоков: {len(self.cipher_blocks)}\n\n"
                 f"Зашифрованные блоки скопированы в поле 'Результат'."
             )
         except Exception as e:
@@ -900,6 +1127,8 @@ class RSATab(QWidget):
             if not cipher_blocks:
                 raise ValueError("Не удалось распарсить зашифрованные блоки.\nВведите числа через запятую.")
             
+            self.cipher_blocks = cipher_blocks
+            
             # Расшифровываем каждый блок
             decrypted_blocks = [mod_exp(c, self.d, self.N) for c in cipher_blocks]
             
@@ -916,10 +1145,18 @@ class RSATab(QWidget):
             # Выводим результат
             self.output_text.setPlainText(decrypted_text)
             
+            self.log_text.append(
+                f"[Расшифрование]\n"
+                f"Блоков C_i: {len(cipher_blocks)}\n"
+                f"Блоков M_i: {len(decrypted_blocks)}\n"
+                f"Текст: {decrypted_text[:RSA_MSG_TRUNCATE_SHORT]}{'...' if len(decrypted_text) > RSA_MSG_TRUNCATE_SHORT else ''}\n"
+                f"Параметры: N={self.N}, d={self.d}\n"
+            )
+            
             QMessageBox.information(
                 self, "✅ Расшифрование выполнено",
                 f"Блоки расшифрованы!\n\n"
-                f"Расшифрованный текст:\n{decrypted_text[:100]}{'...' if len(decrypted_text) > 100 else ''}"
+                f"Расшифрованный текст:\n{decrypted_text[:RSA_MSG_TRUNCATE_LONG]}{'...' if len(decrypted_text) > RSA_MSG_TRUNCATE_LONG else ''}"
             )
         except Exception as e:
             QMessageBox.critical(self, "❌ Ошибка расшифрования", str(e))
